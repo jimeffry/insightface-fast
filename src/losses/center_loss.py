@@ -38,7 +38,7 @@ class CenterLossMetric(mx.metric.EvalMetric):
 # see details:
 # <A Discriminative Feature Learning Approach for Deep Face Recogfnition>
 class CenterLoss(mx.operator.CustomOp):
-    def __init__(self, ctx, shapes, dtypes, num_class, alpha, scale=1.0):
+    def __init__(self, ctx, shapes, dtypes, num_class, alpha, scale=1.0,lamdb=1.0):
         if not len(shapes[0]) == 2:
             raise ValueError('dim for input_data shoudl be 2 for CenterLoss')
 
@@ -46,6 +46,7 @@ class CenterLoss(mx.operator.CustomOp):
         self.batch_size = shapes[0][0]
         self.num_class = num_class
         self.scale = scale
+        self.lamdb = lamdb
 
     def forward(self, is_train, req, in_data, out_data, aux):
         labels = in_data[1].asnumpy()
@@ -56,7 +57,7 @@ class CenterLoss(mx.operator.CustomOp):
         for i in range(self.batch_size):
             diff[i] = in_data[0][i] - center[int(labels[i])]
 
-        loss = mx.nd.sum(mx.nd.square(diff)) / self.batch_size / 2
+        loss = mx.nd.sum(mx.nd.square(diff)) / self.batch_size / 2 * self.lamdb
         self.assign(out_data[0], req[0], loss)
 
     def backward(self, req, out_grad, in_data, out_data, in_grad, aux):
@@ -84,7 +85,7 @@ class CenterLoss(mx.operator.CustomOp):
 
 @mx.operator.register("centerloss")
 class CenterLossProp(mx.operator.CustomOpProp):
-    def __init__(self, num_class, alpha, scale=1.0, batchsize=64):
+    def __init__(self, num_class, alpha, scale=1.0, lamdb=1.0,batchsize=64):
         super(CenterLossProp, self).__init__(need_top_grad=False)
 
         # convert it to numbers
@@ -92,6 +93,7 @@ class CenterLossProp(mx.operator.CustomOpProp):
         self.alpha = float(alpha)
         self.scale = float(scale)
         self.batchsize = int(batchsize)
+        self.lamdb = float(lamdb)
 
     def list_arguments(self):
         return ['data', 'label']
@@ -120,4 +122,4 @@ class CenterLossProp(mx.operator.CustomOpProp):
         return [data_shape, label_shape], [output_shape], [diff_shape, center_shape, sum_shape]
 
     def create_operator(self, ctx, shapes, dtypes):
-        return CenterLoss(ctx, shapes, dtypes, self.num_class, self.alpha, self.scale)
+        return CenterLoss(ctx, shapes, dtypes, self.num_class, self.alpha, self.scale,self.lamdb)

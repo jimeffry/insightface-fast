@@ -33,8 +33,8 @@ import spherenet
 import verification
 import sklearn
 from datetime import datetime
-#sys.path.append(os.path.join(os.path.dirname(__file__), 'losses'))
-#import center_loss
+sys.path.append(os.path.join(os.path.dirname(__file__), 'losses'))
+import center_loss
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -173,6 +173,7 @@ def get_symbol(args, arg_params, aux_params):
             version_output=args.version_output, version_unit=args.version_unit,
             version_act=args.version_act)
     all_label = mx.symbol.Variable('softmax_label')
+    #center_label = mx.symbol.Variable('center_label')
     gt_label = all_label
     extra_loss = None
     _weight = mx.symbol.Variable("fc7_weight", shape=(args.num_classes, args.emb_size), lr_mult=1.0, wd_mult=args.fc7_wd_mult)
@@ -266,10 +267,12 @@ def get_symbol(args, arg_params, aux_params):
                 else:
                     cond_v = cos_t - threshold
                     cond = mx.symbol.Activation(data=cond_v, act_type='relu')
+                    print("not easy margin: cond")
                     #cond = mx.symbol.Activation(data=cos_t, act_type='relu')
                 if args.easy_margin:
                     zy_keep = mx.sym.cos(t)
                 else:
+                    print("not easy margin: sine")
                     zy_keep = mx.sym.sin(t)-1
                 new_zy = mx.sym.cos(t)
                 body = mx.sym.where(cond, new_zy, zy_keep)
@@ -285,6 +288,10 @@ def get_symbol(args, arg_params, aux_params):
     out_list = [mx.symbol.BlockGrad(embedding)]
     softmax = mx.symbol.SoftmaxOutput(data=fc7, label = gt_label, name='softmax', normalization='valid')
     out_list.append(softmax)
+    center_loss_data = mx.symbol.Custom(data=embedding, label=gt_label, name='center_loss_data', op_type='centerloss',\
+            num_class=args.num_classes, alpha=0.5, scale=0.5,lamdb=0.5,batchsize=args.per_batch_size)
+    extra_loss = mx.symbol.MakeLoss(name='extra_center_loss', data=center_loss_data)
+    out_list.append(extra_loss)
     out = mx.symbol.Group(out_list)
     return (out, arg_params, aux_params)
 
@@ -400,7 +407,7 @@ def train_net(args):
             print('ver', name)
     def ver_test(nbatch):
         results = []
-        for i in xrange(len(ver_list)):
+        for i in range(len(ver_list)):
             acc1, std1, acc2, std2, xnorm, embeddings_list = verification.test(ver_list[i], model, args.batch_size, 10, None, None)
             print('[%s][%d]XNorm: %f' % (ver_name_list[i], nbatch, xnorm))
             #print('[%s][%d]Accuracy: %1.5f+-%1.5f' % (ver_name_list[i], nbatch, acc1, std1))
@@ -418,7 +425,7 @@ def train_net(args):
         if args.loss_type>=1 and args.loss_type<=7:
             lr_steps = [100000, 140000, 160000]
         p = 512.0/args.batch_size
-        for l in xrange(len(lr_steps)):
+        for l in range(len(lr_steps)):
             lr_steps[l] = int(lr_steps[l]*p)
     else:
         lr_steps = [int(x) for x in args.lr_steps.split(',')]

@@ -47,6 +47,11 @@ import face_image
 sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 from face_config import config
 
+try:
+  xrange
+except:
+  xrange = range
+
 class LFold:
   def __init__(self, n_splits = 2, shuffle = False):
     self.n_splits = n_splits
@@ -183,7 +188,7 @@ def evaluate(embeddings, actual_issame, nrof_folds=10, pca = 0):
     return tpr, fpr, accuracy, val, val_std, far
 
 def load_bin_(path, image_size):
-  bins, issame_list = pickle.load(open(path, 'rb'))
+  bins, issame_list = pickle.load(open(path, 'rb'),encoding='iso-8859-1')
   data_list = []
   for flip in [0,1]:
     data = nd.empty((len(issame_list)*2, 3, image_size[0], image_size[1]))
@@ -202,7 +207,7 @@ def load_bin_(path, image_size):
   return (data_list, issame_list)
 
 def load_bin(path, image_size):
-  bins, issame_list = pickle.load(open(path, 'rb'))
+  bins, issame_list = pickle.load(open(path, 'rb'),encoding='iso-8859-1')
   data_list = []
   data = nd.empty((len(issame_list)*2, 3, image_size[0], image_size[1]))
   for i in xrange(len(issame_list)*2):

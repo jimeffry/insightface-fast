@@ -35,6 +35,9 @@ import sklearn
 from datetime import datetime
 sys.path.append(os.path.join(os.path.dirname(__file__), 'losses'))
 import center_loss
+sys.path.append(os.path.join(os.path.dirname(__file__), 'utils'))
+from vis_plt import plot_model
+
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
@@ -122,6 +125,7 @@ def parse_args():
     parser.add_argument('--cutoff', type=int, default=0, help='cut off aug')
     parser.add_argument('--target', type=str, default='lfw,cfp_fp,agedb_30', help='verification targets: cfp_fp,agedb_30')
     parser.add_argument('--display', type=int, default=20, help='callback_speed num to print info')
+    parser.add_argument('--display_model', type=bool, default=True, help='if display the model')
     args = parser.parse_args()
     return args
 
@@ -245,6 +249,7 @@ def get_symbol(args, arg_params, aux_params):
         assert s>0.0
         _weight = mx.symbol.L2Normalization(_weight, mode='instance')
         nembedding = mx.symbol.L2Normalization(embedding, mode='instance', name='fc1n')*s
+        nembedding = mx.symbol.Dropout(data=nembedding, p=0.4)
         fc7 = mx.sym.FullyConnected(data=nembedding, weight = _weight, no_bias = True, num_hidden=args.num_classes, name='fc7')
         if args.margin_a!=1.0 or args.margin_m!=0.0 or args.margin_b!=0.0:
             if args.margin_a==1.0 and args.margin_m==0.0:
@@ -288,9 +293,13 @@ def get_symbol(args, arg_params, aux_params):
     out_list = [mx.symbol.BlockGrad(embedding)]
     softmax = mx.symbol.SoftmaxOutput(data=fc7, label = gt_label, name='softmax', normalization='valid')
     out_list.append(softmax)
-    center_loss_data = mx.symbol.Custom(data=embedding, label=gt_label, name='center_loss_data', op_type='centerloss',\
+    #print("out shape",np.shape(softmax))
+    center_in = mx.symbol.concat(embedding,fc7,dim=1)
+    center_loss_data = mx.symbol.Custom(data=center_in, label=gt_label, name='center_loss_data', op_type='centerloss',\
             num_class=args.num_classes, alpha=0.5, scale=0.5,lamdb=0.5,batchsize=args.per_batch_size)
     extra_loss = mx.symbol.MakeLoss(name='extra_center_loss', data=center_loss_data)
+    #total_loss = mx.symbol.ElementWiseSum([softmax, extra_loss],name='total_loss')
+    #total_loss_op = mx.symbol.MakeLoss(name='total_loss_op',data=total_loss)
     out_list.append(extra_loss)
     out = mx.symbol.Group(out_list)
     return (out, arg_params, aux_params)
@@ -363,8 +372,11 @@ def train_net(args):
         context       = ctx,
         symbol        = sym,
     )
+    if args.display_model:
+        plot_model(sym,(1,3,112,112),'insightface_train.png')
+        print("plot model successful")
     val_dataiter = None
-
+    print(">>>>>>>>>> begin to load data for training ")
     train_dataiter = FaceImageIter(
         batch_size           = args.batch_size,
         data_shape           = data_shape,

@@ -52,7 +52,7 @@ class CenterLoss(mx.operator.CustomOp):
         labels = in_data[1].asnumpy()
         diff = aux[0]
         center = aux[1]
-
+        soft_probility = mx.symbol.softmax(in_data[0])
         # store x_i - c_yi
         for i in range(self.batch_size):
             diff[i] = in_data[0][i] - center[int(labels[i])]

@@ -38,7 +38,7 @@ class CenterLossMetric(mx.metric.EvalMetric):
 # see details:
 # <A Discriminative Feature Learning Approach for Deep Face Recogfnition>
 class CenterLoss(mx.operator.CustomOp):
-    def __init__(self, ctx, shapes, dtypes, num_class, alpha, scale=1.0,lamdb=1.0):
+    def __init__(self, ctx, shapes, dtypes, num_class, alpha,emb_size, scale=1.0,lamdb=1.0):
         if not len(shapes[0]) == 2:
             raise ValueError('dim for input_data shoudl be 2 for CenterLoss')
 
@@ -47,15 +47,20 @@ class CenterLoss(mx.operator.CustomOp):
         self.num_class = num_class
         self.scale = scale
         self.lamdb = lamdb
+        self.emb_size = emb_size
 
     def forward(self, is_train, req, in_data, out_data, aux):
         labels = in_data[1].asnumpy()
         diff = aux[0]
         center = aux[1]
-        soft_probility = mx.symbol.softmax(in_data[0])
+        soft_probility = mx.ndarray.softmax(in_data[0][:,self.emb_size:])
         # store x_i - c_yi
+        self.pred_label = mx.ndarray.argmax(soft_probility,axis=1)
         for i in range(self.batch_size):
-            diff[i] = in_data[0][i] - center[int(labels[i])]
+            if int(pred_label[i]) == int(labels[i]):
+                diff[i] = in_data[0][i,:self.emb_size] - center[int(labels[i])]
+            else:
+                diff[i] = 0
 
         loss = mx.nd.sum(mx.nd.square(diff)) / self.batch_size / 2 * self.lamdb
         self.assign(out_data[0], req[0], loss)
@@ -73,7 +78,9 @@ class CenterLoss(mx.operator.CustomOp):
         labels = in_data[1].asnumpy()
         label_occur = dict()
         for i, label in enumerate(labels):
-            label_occur.setdefault(int(label), []).append(i)
+            label_occur[int(label)]=label_occur.setdefault(int(label), [])
+            if int(label)== int(self.pred_label[i]):
+                label_occur[int(label)].append(i)
 
         for label, sample_index in label_occur.items():
             sum_[:] = 0
@@ -85,7 +92,7 @@ class CenterLoss(mx.operator.CustomOp):
 
 @mx.operator.register("centerloss")
 class CenterLossProp(mx.operator.CustomOpProp):
-    def __init__(self, num_class, alpha, scale=1.0, lamdb=1.0,batchsize=64):
+    def __init__(self, num_class, alpha, scale=1.0, lamdb=1.0,emb_size=512,batchsize=64):
         super(CenterLossProp, self).__init__(need_top_grad=False)
 
         # convert it to numbers
@@ -94,6 +101,7 @@ class CenterLossProp(mx.operator.CustomOpProp):
         self.scale = float(scale)
         self.batchsize = int(batchsize)
         self.lamdb = float(lamdb)
+        self.emb_size = emb_size
 
     def list_arguments(self):
         return ['data', 'label']

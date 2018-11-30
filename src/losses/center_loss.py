@@ -28,7 +28,7 @@ class Accuracy(mx.metric.EvalMetric):
 # define some metric of center_loss
 class CenterLossMetric(mx.metric.EvalMetric):
     def __init__(self):
-        super(CenterLossMetric, self).__init__('center_loss')
+        super(CenterLossMetric, self).__init__('extra_center_loss')
 
     def update(self, labels, preds):
         self.sum_metric += preds[1].asnumpy()[0]
@@ -53,14 +53,16 @@ class CenterLoss(mx.operator.CustomOp):
         labels = in_data[1].asnumpy()
         diff = aux[0]
         center = aux[1]
-        soft_probility = mx.ndarray.softmax(in_data[0][:,self.emb_size:])
+        soft_probility = mx.ndarray.BlockGrad(mx.ndarray.softmax(in_data[0][:,self.emb_size:]))
+        #soft_probility = mx.ndarray.BlockGrad(soft_probility)
         # store x_i - c_yi
-        self.pred_label = mx.ndarray.argmax(soft_probility,axis=1)
+        #self.pred_label = mx.ndarray.BlockGrad(mx.ndarray.argmax(soft_probility,axis=1))
+        #self.pred_label = mx.ndarray.BlockGrad(self.pred_label)
         for i in range(self.batch_size):
-            if int(pred_label[i]) == int(labels[i]):
-                diff[i] = in_data[0][i,:self.emb_size] - center[int(labels[i])]
-            else:
-                diff[i] = 0
+            #if int(pred_label[i]) == int(labels[i]):
+            diff[i] = in_data[0][i] - center[int(labels[i])]
+            #else:
+             #   diff[i] = 0
 
         loss = mx.nd.sum(mx.nd.square(diff)) / self.batch_size / 2 * self.lamdb
         self.assign(out_data[0], req[0], loss)
@@ -78,9 +80,10 @@ class CenterLoss(mx.operator.CustomOp):
         labels = in_data[1].asnumpy()
         label_occur = dict()
         for i, label in enumerate(labels):
-            label_occur[int(label)]=label_occur.setdefault(int(label), [])
-            if int(label)== int(self.pred_label[i]):
-                label_occur[int(label)].append(i)
+            label_occur.setdefault(int(label), []).append(i)
+            #label_occur[int(label)]=label_occur.setdefault(int(label), [])
+            #if int(label)== int(self.pred_label[i]):
+             #   label_occur[int(label)].append(i)
 
         for label, sample_index in label_occur.items():
             sum_[:] = 0

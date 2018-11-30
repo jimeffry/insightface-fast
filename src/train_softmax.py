@@ -294,13 +294,13 @@ def get_symbol(args, arg_params, aux_params):
     softmax = mx.symbol.SoftmaxOutput(data=fc7, label = gt_label, name='softmax', normalization='valid')
     out_list.append(softmax)
     #print("out shape",np.shape(softmax))
-    center_in = mx.symbol.concat(embedding,fc7,dim=1)
-    center_loss_data = mx.symbol.Custom(data=center_in, label=gt_label, name='center_loss_data', op_type='centerloss',\
+    #center_in = mx.symbol.concat(embedding,fc7,dim=1)
+    center_loss_data = mx.symbol.Custom(data=embedding, label=gt_label, name='center_loss_data', op_type='centerloss',\
             num_class=args.num_classes, alpha=0.5, scale=0.5,lamdb=0.1,batchsize=args.per_batch_size,emb_size=args.emb_size)
-    extra_loss = mx.symbol.MakeLoss(name='extra_center_loss', data=center_loss_data)
+    extra_center_loss = mx.symbol.MakeLoss(name='extra_center_loss', data=center_loss_data)
     #total_loss = mx.symbol.ElementWiseSum([softmax, extra_loss],name='total_loss')
     #total_loss_op = mx.symbol.MakeLoss(name='total_loss_op',data=total_loss)
-    out_list.append(extra_loss)
+    out_list.append(extra_center_loss)
     out = mx.symbol.Group(out_list)
     return (out, arg_params, aux_params)
 

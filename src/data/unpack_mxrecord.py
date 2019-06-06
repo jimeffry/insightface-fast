@@ -1,11 +1,11 @@
 import mxnet as mx
 import argparse
-import PIL.Image
 import io
 import numpy as np
 import cv2
 import tensorflow as tf
 import os
+import sys
 import string
 
 def parse_args():
@@ -13,15 +13,15 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description='data path information'
     )
-    parser.add_argument('--bin_path', default='../datasets/faces_ms1m_112x112/train.rec', type=str,
+    parser.add_argument('--bin_path', default='/wdc/LXY.data/faces_webface/train.rec', type=str,
                         help='path to the binary image file')
-    parser.add_argument('--idx_path', default='../datasets/faces_ms1m_112x112/train.idx', type=str,
+    parser.add_argument('--idx_path', default='/wdc/LXY.data/faces_webface/train.idx', type=str,
                         help='path to the image index path')
-    parser.add_argument('--tfrecords_file_path', default='../datasets/tfrecords', type=str,
+    parser.add_argument('--tfrecords_file_path', default='/wdc/LXY.data/faces_webface_112x112/tfrecords', type=str,
                         help='path to the output of tfrecords file path')
-    parser.add_argument('--show_fg', default=False, type=bool,
-                        help='if to show the saved tfrecords')
-    parser.add_argument('--base_dir', default="/home/lxy/Downloads/DataSet/Ms-1M-Celeb/train", type=str,
+    parser.add_argument('--saveimg', default=True, type=bool,
+                        help='convert mxrecord to imgs')
+    parser.add_argument('--base_dir', default="/wdc/LXY.data/webface_imgs/", type=str,
                         help='images saved dir')
     args = parser.parse_args()
     return args
@@ -29,8 +29,9 @@ def parse_args():
 
 def saved_img(img,base_dir,label,cnt):
     dir_path = os.path.join(base_dir,label)
-    fix = str(cnt)+".jpg"
+    fix = str(cnt)+".png"
     #img_path = os.path.join(dir_path,fix)
+    img = cv2.cvtColor(img,cv2.COLOR_RGB2BGR)
     if os.path.exists(dir_path):
         img_path = os.path.join(dir_path,fix)
         cv2.imwrite(img_path,img)
@@ -79,6 +80,26 @@ def mx2tfrecords(imgidx, imgrec, args):
             print('%d num image processed' % i)
     writer.close()
 
+def mx2img(imgidx,imgrec,base_dir):
+    '''
+    imgidx: the index of all images in dataset
+    '''
+    cnt_dict = dict()
+    idx = 0
+    total = len(imgidx)
+    for i in imgidx:
+        idx+=1
+        sys.stdout.write('\r >> process %d / %d ' %(idx,total))
+        sys.stdout.flush()
+        img_info = imgrec.read_idx(i)
+        header,img = mx.recordio.unpack(img_info)
+        label_s = str(int(header.label))
+        cnt_dict.setdefault(label_s,0)
+        cnt_dict[label_s]+=1
+        img_data = mx.image.imdecode(img) 
+        img_array = img_data.asnumpy()
+        saved_img(img_array,base_dir,label_s,cnt_dict[label_s])
+
 
 def parse_function(example_proto):
     features = {'image_raw': tf.FixedLenFeature([], tf.string),
@@ -105,7 +126,7 @@ if __name__ == '__main__':
     data_shape = (3, 112, 112)
     args = parse_args()
     base_dir = args.base_dir
-    if args.show_fg:
+    if args.saveimg:
         imgrec = mx.recordio.MXIndexedRecordIO(args.idx_path, args.bin_path, 'r')
         s = imgrec.read_idx(0)
         header, _ = mx.recordio.unpack(s)
@@ -124,7 +145,8 @@ if __name__ == '__main__':
         #print('id2range', len(id2range))
 
         # # generate tfrecords
-        mx2tfrecords(imgidx, imgrec, args)
+        #mx2tfrecords(imgidx, imgrec, args)
+        mx2img(imgidx,imgrec,base_dir)
     else:
         config = tf.ConfigProto(allow_soft_placement=True)
         sess = tf.Session(config=config)

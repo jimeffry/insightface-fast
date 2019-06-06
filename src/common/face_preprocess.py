@@ -5,7 +5,7 @@ from skimage import transform as trans
 
 def parse_lst_line(line):
   #vec = line.strip().split("\t")
-  vec = line.strip().split(" ")
+  vec = line.strip().split()
   assert len(vec)>=3
   aligned = int(vec[0])
   image_path = vec[1]

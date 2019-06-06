@@ -53,7 +53,7 @@ class CenterLoss(mx.operator.CustomOp):
         labels = in_data[1].asnumpy()
         diff = aux[0]
         center = aux[1]
-        soft_probility = mx.ndarray.BlockGrad(mx.ndarray.softmax(in_data[0][:,self.emb_size:]))
+        #soft_probility = mx.ndarray.BlockGrad(mx.ndarray.softmax(in_data[0][:,self.emb_size:]))
         #soft_probility = mx.ndarray.BlockGrad(soft_probility)
         # store x_i - c_yi
         #self.pred_label = mx.ndarray.BlockGrad(mx.ndarray.argmax(soft_probility,axis=1))

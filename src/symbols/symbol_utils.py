@@ -26,15 +26,10 @@ def get_fc1(last_conv, num_classes, fc_type):
     body = mx.symbol.Dropout(data=body, p=0.4)
     fc1 = body
   elif fc_type=='E':
-    if not config.nobn:
-      body = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=2e-5, momentum=bn_mom, name='bn1')
-    #body = mx.symbol.Dropout(data=body, p=0.4)
+    body = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=2e-5, momentum=bn_mom, name='bn1')
+    body = mx.symbol.Dropout(data=body, p=0.4)
     fc1 = mx.sym.FullyConnected(data=body, num_hidden=num_classes, name='pre_fc1')
-    if not config.nobn:
-      fc1 = mx.sym.BatchNorm(data=fc1, fix_gamma=True, eps=2e-5, momentum=bn_mom, name='fc1')
-    else:
-      fc1 = Act(data=fc1, act_type='prelu', name='fc1')
-    #fc1 = mx.symbol.Dropout(data=fc1, p=0.4)
+    fc1 = mx.sym.BatchNorm(data=fc1, fix_gamma=True, eps=2e-5, momentum=bn_mom, name='fc1')
   elif fc_type=='F':
     body = mx.sym.BatchNorm(data=body, fix_gamma=False, eps=2e-5, momentum=bn_mom, name='bn1')
     body = mx.symbol.Dropout(data=body, p=0.4)

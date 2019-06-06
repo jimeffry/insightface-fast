@@ -12,6 +12,6 @@
 from easydict import EasyDict
 
 config = EasyDict()
-config.val_mirror = 0
+config.val_mirror = 1
 config.nobn = 0
 config.img_norm = 0

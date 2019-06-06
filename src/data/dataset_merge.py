@@ -14,12 +14,24 @@ from sklearn.decomposition import PCA
 from easydict import EasyDict as edict
 from sklearn.cluster import DBSCAN
 import numpy as np
-
 sys.path.append(os.path.join(os.path.dirname(__file__),'..', 'common'))
 import face_image
-
 sys.path.append(os.path.join(os.path.dirname(__file__),'..', 'eval'))
 import verification
+
+def parms():
+    parser = argparse.ArgumentParser(description='do dataset merge')
+    # general
+    parser.add_argument('--record-dirs',dest='record_dirs', default=None, type=str, help='mxrecord dirs')
+    parser.add_argument('--exclude', default='', type=str, help='')
+    parser.add_argument('--output', default='', type=str, help='')
+    parser.add_argument('--model', default=None, help='path to load model.')
+    parser.add_argument('--batch-size', default=32, type=int, help='')
+    parser.add_argument('--param1', default=None, type=float, help='')
+    parser.add_argument('--param2', default=None, type=float, help='')
+    parser.add_argument('--test', default=0, type=int, help='')
+    parser.add_argument('--prefix', default='train', type=str, help='name of mxrecords')
+    return parser.parse_args()
 
 def ch_dev(arg_params, aux_params, ctx):
   new_args = dict()
@@ -77,23 +89,17 @@ def get_embedding(args, imgrec, id, image_size, model):
   embedding = sklearn.preprocessing.normalize(embedding).flatten()
   return embedding
 
-def main(args):
-  include_datasets = args.include.split(',')
-  prop = face_image.load_property(include_datasets[0])
-  image_size = prop.image_size
-  print('image_size', image_size)
-  model = None
-  if args.model is not None :
+def load_model(args):
     ctx = []
     cvd = os.environ['CUDA_VISIBLE_DEVICES'].strip()
     if len(cvd)>0:
-      for i in xrange(len(cvd.split(','))):
-        ctx.append(mx.gpu(i))
+        for i in xrange(len(cvd.split(','))):
+            ctx.append(mx.gpu(i))
     if len(ctx)==0:
-      ctx = [mx.cpu()]
-      print('use cpu')
+        ctx = [mx.cpu()]
+        print('use cpu')
     else:
-      print('gpu num:', len(ctx))
+        print('gpu num:', len(ctx))
     args.ctx_num = len(ctx)
     vec = args.model.split(',')
     prefix = vec[0]
@@ -108,187 +114,169 @@ def main(args):
     model = mx.mod.Module(symbol=sym, context=ctx, label_names = None)
     model.bind(data_shapes=[('data', (args.batch_size, 3, image_size[0], image_size[1]))])
     model.set_params(arg_params, aux_params)
-  else:
-    assert args.param1==0.0
-  rec_list = []
-  for ds in include_datasets:
-    path_imgrec = os.path.join(ds, 'train.rec')
-    path_imgidx = os.path.join(ds, 'train.idx')
-    imgrec = mx.recordio.MXIndexedRecordIO(path_imgidx, path_imgrec, 'r')  # pylint: disable=redefined-variable-type
-    rec_list.append(imgrec)
-  id_list_map = {}
-  all_id_list = []
-  test_limit = 0
-  for ds_id in xrange(len(rec_list)):
+    return model
+
+def get_ids_list(imgrec,ds_id,model,select_ids):
     id_list = []
-    imgrec = rec_list[ds_id]
     s = imgrec.read_idx(0)
     header, _ = mx.recordio.unpack(s)
     assert header.flag>0
-    print('header0 label', header.label)
+    print('header0 label:', header.label)
     header0 = (int(header.label[0]), int(header.label[1]))
     #assert(header.flag==1)
     imgidx = range(1, int(header.label[0]))
+    print('d_id img nums: ',ds_id,len(imgidx))
     id2range = {}
     seq_identity = range(int(header.label[0]), int(header.label[1]))
     pp=0
     for identity in seq_identity:
-      pp+=1
-      if pp%1000==0:
-        print('processing id', ds_id,pp)
-      if model is not None:
-        embedding = get_embedding(args, imgrec, identity, image_size, model)
-      else:
-        embedding = None
-      #print(embedding.shape)
-      id_list.append( [ds_id, identity, embedding] )
-      if test_limit>0 and pp>=test_limit:
-        break
-    id_list_map[ds_id] = id_list
-    if ds_id==0 or model is None:
-      all_id_list += id_list
-      print(ds_id, len(id_list))
-    else:
-      print("extract ")
-      X = []
-      for id_item in all_id_list:
-        X.append(id_item[2])
-      X = np.array(X)
-      for i in xrange(len(id_list)):
-        id_item = id_list[i]
-        y = id_item[2]
-        sim = np.dot(X, y.T)
-        idx = np.where(sim>=args.param1)[0]
-        if len(idx)>0:
-          continue
-        all_id_list.append(id_item)
-      print(ds_id, len(id_list), len(all_id_list))
-
-
-  if len(args.exclude)>0:
-    if os.path.isdir(args.exclude):
-      _path_imgrec = os.path.join(args.exclude, 'train.rec')
-      _path_imgidx = os.path.join(args.exclude, 'train.idx')
-      _imgrec = mx.recordio.MXIndexedRecordIO(_path_imgidx, _path_imgrec, 'r')  # pylint: disable=redefined-variable-type
-      _ds_id = len(rec_list)
-      _id_list = []
-      s = _imgrec.read_idx(0)
-      header, _ = mx.recordio.unpack(s)
-      assert header.flag>0
-      print('header0 label', header.label)
-      header0 = (int(header.label[0]), int(header.label[1]))
-      #assert(header.flag==1)
-      imgidx = range(1, int(header.label[0]))
-      seq_identity = range(int(header.label[0]), int(header.label[1]))
-      pp=0
-      for identity in seq_identity:
         pp+=1
-        if pp%10==0:
-          print('processing ex id', pp)
-        embedding = get_embedding(args, _imgrec, identity, image_size, model)
+        if pp%1000==0:
+            print('processing id', ds_id,pp)
+        if model is not None:
+            embedding = get_embedding(args, imgrec, identity, image_size, model)
+        else:
+            embedding = None
         #print(embedding.shape)
-        _id_list.append( (_ds_id, identity, embedding) )
-        if test_limit>0 and pp>=test_limit:
-          break
+        id_list.append([ds_id, identity, embedding])
+        if select_ids>0 and pp>=select_ids:
+            break
+    return id_list,len(imgidx)
+
+def get_exclude_data(args,rec_list,image_size,select_ids,model,all_id_list):
+    if len(args.exclude)>0:
+        if os.path.isdir(args.exclude):
+            _path_imgrec = os.path.join(args.exclude, 'train.rec')
+            _path_imgidx = os.path.join(args.exclude, 'train.idx')
+            _imgrec = mx.recordio.MXIndexedRecordIO(_path_imgidx, _path_imgrec, 'r')  # pylint: disable=redefined-variable-type
+            _ds_id = len(rec_list)
+            _id_list = get_ids_list(_imgrec,_ds_id,model,select_ids)
+        else:
+            _id_list = []
+            data_set = verification.load_bin(args.exclude, image_size)[0][0]
+            print(data_set.shape)
+            data = nd.zeros( (1,3,image_size[0], image_size[1]))
+            for i in xrange(data_set.shape[0]):
+                data[0] = data_set[i]
+                db = mx.io.DataBatch(data=(data,))
+                model.forward(db, is_train=False)
+                net_out = model.get_outputs()
+                embedding = net_out[0].asnumpy().flatten()
+                _norm=np.linalg.norm(embedding)
+                embedding /= _norm
+                _id_list.append((i, i, embedding))
+            X = []
+            for id_item in all_id_list:
+                X.append(id_item[2])
+            X = np.array(X)
+            emap = {}
+            for id_item in _id_list:
+                y = id_item[2]
+                sim = np.dot(X, y.T)
+                idx = np.where(sim>=args.param2)[0]
+                for j in idx:
+                    emap[j] = 1
+                    all_id_list[j][1] = -1
+            print('exclude', len(emap))
+        return all_id_list
     else:
-      _id_list = []
-      data_set = verification.load_bin(args.exclude, image_size)[0][0]
-      print(data_set.shape)
-      data = nd.zeros( (1,3,image_size[0], image_size[1]))
-      for i in xrange(data_set.shape[0]):
-        data[0] = data_set[i]
-        db = mx.io.DataBatch(data=(data,))
-        model.forward(db, is_train=False)
-        net_out = model.get_outputs()
-        embedding = net_out[0].asnumpy().flatten()
-        _norm=np.linalg.norm(embedding)
-        embedding /= _norm
-        _id_list.append( (i, i, embedding) )
+        return None
 
-    #X = []
-    #for id_item in all_id_list:
-    #  X.append(id_item[2])
-    #X = np.array(X)
-    #param1 = 0.3
-    #while param1<=1.01:
-    #  emap = {}
-    #  for id_item in _id_list:
-    #    y = id_item[2]
-    #    sim = np.dot(X, y.T)
-    #    #print(sim.shape)
-    #    #print(sim)
-    #    idx = np.where(sim>=param1)[0]
-    #    for j in idx:
-    #      emap[j] = 1
-    #  exclude_removed = len(emap)
-    #  print(param1, exclude_removed)
-    #  param1+=0.05
-
-      X = []
-      for id_item in all_id_list:
-        X.append(id_item[2])
-      X = np.array(X)
-      emap = {}
-      for id_item in _id_list:
-        y = id_item[2]
-        sim = np.dot(X, y.T)
-        idx = np.where(sim>=args.param2)[0]
-        for j in idx:
-          emap[j] = 1
-          all_id_list[j][1] = -1
-      print('exclude', len(emap))
-
-  if args.test>0:
-    return
-
-  if not os.path.exists(args.output):
-    os.makedirs(args.output)
-  writer = mx.recordio.MXIndexedRecordIO(os.path.join(args.output, 'train.idx'), os.path.join(args.output, 'train.rec'), 'w')
-  idx = 1
-  identities = []
-  nlabel = -1
-  for id_item in all_id_list:
-    if id_item[1]<0:
-      continue
-    nlabel+=1
-    ds_id = id_item[0]
-    imgrec = rec_list[ds_id]
-    id = id_item[1]
-    s = imgrec.read_idx(id)
-    header, _ = mx.recordio.unpack(s)
-    a, b = int(header.label[0]), int(header.label[1])
-    identities.append( (idx, idx+b-a) )
-    for _idx in xrange(a,b):
-      s = imgrec.read_idx(_idx)
-      _header, _content = mx.recordio.unpack(s)
-      nheader = mx.recordio.IRHeader(0, nlabel, idx, 0)
-      s = mx.recordio.pack(nheader, _content)
-      writer.write_idx(idx, s)
-      idx+=1
-  id_idx = idx
-  for id_label in identities:
-    _header = mx.recordio.IRHeader(1, id_label, idx, 0)
+def write_record(args,all_id_list,rec_list,image_size,total_num):
+    if not os.path.exists(args.output):
+        os.makedirs(args.output)
+    writer = mx.recordio.MXIndexedRecordIO(os.path.join(args.output, 'train.idx'), os.path.join(args.output, 'train.rec'), 'w')
+    idx = 1
+    identities = []
+    nlabel = -1
+    total_ = len(all_id_list)
+    for id_num,id_item in enumerate(all_id_list):
+        #sys.stdout.write("\r>>process  %d/%d" %(id_num,total_num))
+        #sys.stdout.flush()
+        if id_item[1]<0:
+            continue
+        nlabel+=1
+        ds_id = id_item[0]
+        imgrec = rec_list[ds_id]
+        id = id_item[1]
+        s = imgrec.read_idx(id)
+        header, _ = mx.recordio.unpack(s)
+        a, b = int(header.label[0]), int(header.label[1])
+        identities.append([idx, idx+b-a])
+        #print(a,b)
+        for tmp_idx in range(a,b):
+            sys.stdout.write("\r>>process  %d/%d" %(idx,total_num))
+            sys.stdout.flush()
+            s = imgrec.read_idx(tmp_idx)
+            tmp_header, tmp_content = mx.recordio.unpack(s)
+            nheader = mx.recordio.IRHeader(0, nlabel, idx, 0)
+            s = mx.recordio.pack(nheader, tmp_content)
+            writer.write_idx(idx, s)
+            idx+=1
+    id_idx = idx
+    for id_label in identities:
+        _header = mx.recordio.IRHeader(2, id_label, idx, 0)
+        s = mx.recordio.pack(_header, '')
+        writer.write_idx(idx, s)
+        idx+=1
+    _header = mx.recordio.IRHeader(2, (id_idx, idx), 0, 0)
     s = mx.recordio.pack(_header, '')
-    writer.write_idx(idx, s)
-    idx+=1
-  _header = mx.recordio.IRHeader(1, (id_idx, idx), 0, 0)
-  s = mx.recordio.pack(_header, '')
-  writer.write_idx(0, s)
-  with open(os.path.join(args.output, 'property'), 'w') as f:
-    f.write("%d,%d,%d"%(len(identities), image_size[0], image_size[1]))
+    writer.write_idx(0, s)
+    print('total img: ',id_idx,idx)
+    with open(os.path.join(args.output, 'property'), 'w') as f:
+       f.write("%d,%d,%d"%(len(identities), image_size[0], image_size[1]))
+       f.close()
+
+def main(args):
+    input_datasets = args.record_dirs.split(',')
+    prop = face_image.load_property(input_datasets[0])
+    image_size = prop.image_size
+    print('image_size:', image_size)
+    model = None
+    if args.model is not None :
+        model = load_model(args)
+    else:
+        assert args.param1==None,'the param1 is not None'
+    rec_list = []
+    for ds in input_datasets:
+        path_imgrec = os.path.join(ds, '%s.rec' % args.prefix)
+        path_imgidx = os.path.join(ds, '%s.idx' % args.prefix)
+        imgrec = mx.recordio.MXIndexedRecordIO(path_imgidx, path_imgrec, 'r')  
+        rec_list.append(imgrec)
+    id_dict_map = {}
+    all_id_list = []
+    select_ids = 0
+    total_num = 0
+    for ds_id in xrange(len(rec_list)):
+        imgrec = rec_list[ds_id]
+        id_list,img_num = get_ids_list(imgrec,ds_id,model,select_ids)
+        total_num +=img_num
+        id_dict_map[ds_id] = id_list
+        if ds_id==0 or model is None:
+            all_id_list += id_list
+            #print('data_list',ds_id, len(id_list))
+        else:
+            print("extract load model ")
+            X = []
+            for id_item in all_id_list:
+                X.append(id_item[2])
+            X = np.array(X)
+            for i in xrange(len(id_list)):
+                id_item = id_list[i]
+                y = id_item[2]
+                sim = np.dot(X, y.T)
+                idx = np.where(sim>=args.param1)[0]
+                if len(idx)>0:
+                    continue
+                all_id_list.append(id_item)
+        print('data_list_id,cur_id_lis,all_id_list:',ds_id, len(id_list), len(all_id_list))
+    if len(args.exclude)>0:
+        all_id_list = get_exclude_data(args,rec_list,image_size,select_ids,model,all_id_list)
+    if args.test>0:
+        return
+    write_record(args,all_id_list,rec_list,image_size,total_num)
 
 if __name__ == '__main__':
-  parser = argparse.ArgumentParser(description='do dataset merge')
-  # general
-  parser.add_argument('--include', default='', type=str, help='')
-  parser.add_argument('--exclude', default='', type=str, help='')
-  parser.add_argument('--output', default='', type=str, help='')
-  parser.add_argument('--model', default=None, help='path to load model.')
-  parser.add_argument('--batch-size', default=32, type=int, help='')
-  parser.add_argument('--param1', default=0.3, type=float, help='')
-  parser.add_argument('--param2', default=0.4, type=float, help='')
-  parser.add_argument('--mode', default=1, type=int, help='')
-  parser.add_argument('--test', default=0, type=int, help='')
-  args = parser.parse_args()
+  args = parms()
   main(args)
 

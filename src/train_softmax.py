@@ -45,6 +45,30 @@ logger.setLevel(logging.INFO)
 args = None
 
 class AccMetric(mx.metric.EvalMetric):
+  def __init__(self):
+    self.axis = 1
+    super(AccMetric, self).__init__(
+        'acc', axis=self.axis,
+        output_names=None, label_names=None)
+    self.losses = []
+    self.count = 0
+
+  def update(self, labels, preds):
+    self.count+=1
+    label = labels[0]
+    pred_label = preds[1]
+    if pred_label.shape != label.shape:
+        pred_label = mx.ndarray.argmax(pred_label, axis=self.axis)
+    pred_label = pred_label.asnumpy().astype('int32').flatten()
+    label = label.asnumpy()
+    if label.ndim==2:
+      label = label[:,0]
+    label = label.astype('int32').flatten()
+    assert label.shape==pred_label.shape
+    self.sum_metric += (pred_label.flat == label.flat).sum()
+    self.num_inst += len(pred_label.flat)
+'''
+class AccMetric(mx.metric.EvalMetric):
     def __init__(self):
         self.axis = 1
         super(AccMetric, self).__init__(
@@ -59,6 +83,7 @@ class AccMetric(mx.metric.EvalMetric):
         for label, pred_label in zip(labels, preds):
             if pred_label.shape != label.shape:
                 pred_label = mx.ndarray.argmax(pred_label, axis=self.axis)
+            #t_l = pred_label.asnumpy()
             pred_label = pred_label.asnumpy().astype('int32').flatten()
             label = label.asnumpy()
             if label.ndim==2:
@@ -67,26 +92,25 @@ class AccMetric(mx.metric.EvalMetric):
             assert label.shape==pred_label.shape
             self.sum_metric += (pred_label.flat == label.flat).sum()
             self.num_inst += len(pred_label.flat)
-
+'''
 class LossValueMetric(mx.metric.EvalMetric):
-    def __init__(self):
-        self.axis = 1
-        super(LossValueMetric, self).__init__(
-          'lossvalue', axis=self.axis,
-          output_names=None, label_names=None)
-        self.losses = []
+  def __init__(self):
+    self.axis = 1
+    super(LossValueMetric, self).__init__(
+        'lossvalue', axis=self.axis,
+        output_names=None, label_names=None)
+    self.losses = []
 
-    def update(self, labels, preds):
-        loss = preds[-1].asnumpy()[0]
-        self.sum_metric += loss
-        self.num_inst += 1.0
-        gt_label = preds[-2].asnumpy()
-        #print("loss sum ",self.sum_metric)
+  def update(self, labels, preds):
+    loss = preds[-1].asnumpy()[0]
+    self.sum_metric += loss
+    self.num_inst += 1.0
+    gt_label = preds[-2].asnumpy()
 
 def parse_args():
     parser = argparse.ArgumentParser(description='Train face network')
     # general
-    parser.add_argument('--data-dir', default='', help='training set directory')
+    parser.add_argument('--data-dir', dest="data_dir",default='', help='training set directory')
     parser.add_argument('--prefix', default='../model/model', help='directory to save model.')
     parser.add_argument('--pretrained', default='', help='pretrained model to load')
     parser.add_argument('--ckpt', type=int, default=1, help='checkpoint saving option. 0: discard saving. 1: save when necessary. 2: always save')
@@ -109,10 +133,10 @@ def parse_args():
     parser.add_argument('--mom', type=float, default=0.9, help='momentum')
     parser.add_argument('--emb-size',dest='emb_size', type=int, default=512, help='embedding length')
     parser.add_argument('--per-batch-size',dest='per_batch_size', type=int, default=128, help='batch size in each context')
-    parser.add_argument('--margin-m',dest='margin_m', type=float, default=0.5, help='margin for loss')
+    parser.add_argument('--margin-m',dest='margin_m', type=float, default=0.8, help='margin for loss')
     parser.add_argument('--margin-s',dest='margin_s', type=float, default=64.0, help='scale for feature')
     parser.add_argument('--margin-a',dest='margin_a', type=float, default=1.0, help='')
-    parser.add_argument('--margin-b',dest='margin_b', type=float, default=0.0, help='')
+    parser.add_argument('--margin-b',dest='margin_b', type=float, default=0.5, help='')
     parser.add_argument('--easy-margin', type=int, default=0, help='')
     parser.add_argument('--margin', type=int, default=4, help='margin for sphere')
     parser.add_argument('--beta', type=float, default=1000., help='param for sphere')
@@ -126,6 +150,7 @@ def parse_args():
     parser.add_argument('--target', type=str, default='lfw,cfp_fp,agedb_30', help='verification targets: cfp_fp,agedb_30')
     parser.add_argument('--display', type=int, default=20, help='callback_speed num to print info')
     parser.add_argument('--display_model', type=bool, default=True, help='if display the model')
+    parser.add_argument('--gpu-list',dest='gpu_list',type=str,default='0',help='training on gpus')
     args = parser.parse_args()
     return args
 
@@ -212,34 +237,17 @@ def get_symbol(args, arg_params, aux_params):
         fc7 = mx.sym.FullyConnected(data=nembedding, weight = _weight, no_bias = True, num_hidden=args.num_classes, name='fc7')
         zy = mx.sym.pick(fc7, gt_label, axis=1)
         cos_t = zy/s
-        cos_m = math.cos(m)
-        sin_m = math.sin(m)
-        mm = math.sin(math.pi-m)*m
-        #threshold = 0.0 
-        threshold = math.cos(math.pi-m)
-        if args.easy_margin:  # m<pi/2 so: pi-m > pi/2
-            #cond = mx.symbol.Activation(data=cos_t, act_type='relu') # this means t > pi/2,  when pi/2 <t < 3*pi/2, sin is decrease
-            cond_v = cos_t - threshold
-            cond = mx.symbol.Activation(data=cond_v, act_type='relu')
-        else:
-            #cond_v = cos_t - threshold
-            #cond = mx.symbol.Activation(data=cond_v, act_type='relu')
-            cond = mx.symbol.Activation(data=cos_t, act_type='relu')
-        body = cos_t*cos_t
-        body = 1.0-body
-        sin_t = mx.sym.sqrt(body)
-        new_zy = cos_t*cos_m
-        b = sin_t*sin_m
-        new_zy = new_zy - b
-        new_zy = new_zy*s
-        mm_lxy = math.sin(m)  # according to the sin fun
-        if args.easy_margin:
-            zy_keep = zy
-        else:
-            zy_keep = zy - s*mm
-        new_zy = mx.sym.where(cond, new_zy, zy_keep)
-        diff = new_zy - zy                                                                                   #from here to the end: if 'gt_label=1': fc7=fc7+body =fc7+1*diff=fc7+new_zy-zy= fc7+new_zy-fc7=new_zy
-        diff = mx.sym.expand_dims(diff, 1)                                                                                         #if 'gt_label=0': fc7=fc7+body =fc7+0*diff=fc7
+        t = mx.sym.arccos(cos_t)
+        if args.margin_a!=1.0:
+          t = t*args.margin_a
+        if args.margin_m>0.0:
+          t = t+args.margin_m
+        body = mx.sym.cos(t)
+        if args.margin_b>0.0:
+          body = body - args.margin_b
+        new_zy = body*s
+        diff = new_zy - zy
+        diff = mx.sym.expand_dims(diff, 1)
         gt_one_hot = mx.sym.one_hot(gt_label, depth = args.num_classes, on_value = 1.0, off_value = 0.0)
         body = mx.sym.broadcast_mul(gt_one_hot, diff)
         fc7 = fc7+body
@@ -264,13 +272,13 @@ def get_symbol(args, arg_params, aux_params):
                     t = t*args.margin_a
                 if args.margin_m>0.0:
                     t = t+args.margin_m
-                threshold = math.cos(math.pi-m)
+                #threshold = math.cos(math.pi-m)
                 if args.easy_margin:  # m<pi/2 so: pi-m > pi/2
                     cond = mx.symbol.Activation(data=cos_t, act_type='relu') # this means t > pi/2,  when pi/2 <t < 3*pi/2, sin is decrease
                     #cond_v = cos_t - threshold
                     #cond = mx.symbol.Activation(data=cond_v, act_type='relu')
                 else:
-                    cond_v = cos_t - threshold
+                    cond_v = math.pi - t
                     cond = mx.symbol.Activation(data=cond_v, act_type='relu')
                     print("not easy margin: cond")
                     #cond = mx.symbol.Activation(data=cos_t, act_type='relu')
@@ -282,6 +290,35 @@ def get_symbol(args, arg_params, aux_params):
                 new_zy = mx.sym.cos(t)
                 body = mx.sym.where(cond, new_zy, zy_keep)
                 #body = mx.sym.cos(t)
+                if args.margin_b>0.0:
+                    body = body + args.margin_b
+                new_zy = body*s
+                diff = new_zy - zy
+                diff = mx.sym.expand_dims(diff, 1)
+                gt_one_hot = mx.sym.one_hot(gt_label, depth = args.num_classes, on_value = 1.0, off_value = 0.0)
+                body = mx.sym.broadcast_mul(gt_one_hot, diff)
+                fc7 = fc7+body
+    elif args.loss_type==6:
+        s = args.margin_s
+        m = args.margin_m
+        assert s>0.0
+        _weight = mx.symbol.L2Normalization(_weight, mode='instance')
+        nembedding = mx.symbol.L2Normalization(embedding, mode='instance', name='fc1n')*s
+        fc7 = mx.sym.FullyConnected(data=nembedding, weight = _weight, no_bias = True, num_hidden=args.num_classes, name='fc7')
+        if args.margin_a!=1.0 or args.margin_m!=0.0 or args.margin_b!=0.0:
+            if args.margin_a==1.0 and args.margin_m==0.0:
+                s_m = s*args.margin_b
+                gt_one_hot = mx.sym.one_hot(gt_label, depth = args.num_classes, on_value = s_m, off_value = 0.0)
+                fc7 = fc7-gt_one_hot
+            else:
+                zy = mx.sym.pick(fc7, gt_label, axis=1)
+                cos_t = zy/s
+                t = mx.sym.arccos(cos_t)
+                if args.margin_a!=1.0:
+                    t = t*args.margin_a
+                if args.margin_m>0.0:
+                    t = t+args.margin_m
+                body = mx.sym.cos(t)
                 if args.margin_b>0.0:
                     body = body - args.margin_b
                 new_zy = body*s
@@ -295,12 +332,12 @@ def get_symbol(args, arg_params, aux_params):
     out_list.append(softmax)
     #print("out shape",np.shape(softmax))
     #center_in = mx.symbol.concat(embedding,fc7,dim=1)
-    center_loss_data = mx.symbol.Custom(data=embedding, label=gt_label, name='center_loss_data', op_type='centerloss',\
-            num_class=args.num_classes, alpha=0.5, scale=0.5,lamdb=0.1,batchsize=args.per_batch_size,emb_size=args.emb_size)
-    extra_center_loss = mx.symbol.MakeLoss(name='extra_center_loss', data=center_loss_data)
+    #center_loss_data = mx.symbol.Custom(data=embedding, label=gt_label, name='center_loss_data', op_type='centerloss',\
+    #        num_class=args.num_classes, alpha=0.5, scale=0.5,lamdb=0.1,batchsize=args.per_batch_size,emb_size=args.emb_size)
+    #extra_center_loss = mx.symbol.MakeLoss(name='extra_center_loss', data=center_loss_data)
     #total_loss = mx.symbol.ElementWiseSum([softmax, extra_loss],name='total_loss')
     #total_loss_op = mx.symbol.MakeLoss(name='total_loss_op',data=total_loss)
-    out_list.append(extra_center_loss)
+    #out_list.append(extra_center_loss)
     out = mx.symbol.Group(out_list)
     return (out, arg_params, aux_params)
 
@@ -311,10 +348,10 @@ def train_net(args):
         for i in range(len(cvd.split(','))):
             ctx.append(mx.gpu(i))
     if len(ctx)==0:
-        ctx = [mx.cpu()]
+        #ctx = [mx.cpu()]
         print('use cpu')
     else:
-        print('gpu num:', len(ctx))
+        print('gpu num:', len(ctx),ctx)
     prefix = args.prefix
     prefix_dir = os.path.dirname(prefix)
     if not os.path.exists(prefix_dir):
@@ -372,9 +409,9 @@ def train_net(args):
         context       = ctx,
         symbol        = sym,
     )
-    if args.display_model:
-        plot_model(sym,(1,3,112,112),'insightface_train.png')
-        print("plot model successful")
+    ##if args.display_model:
+      #  plot_model(sym,(1,3,112,112),'insightface_train.png')
+       # print("plot model successful")
     val_dataiter = None
     print(">>>>>>>>>> begin to load data for training ")
     train_dataiter = FaceImageIter(
@@ -461,17 +498,17 @@ def train_net(args):
             do_save = False
             if len(acc_list)>0:
                 lfw_score = acc_list[0]
-                if lfw_score>highest_acc[0]:
-                    highest_acc[0] = lfw_score
-                    if lfw_score>=0.998:
-                        do_save = True
+                #if lfw_score>highest_acc[0]:
+                 #   highest_acc[0] = lfw_score
+                if lfw_score>=0.98:
+                    do_save = True
                 if acc_list[-1]>=highest_acc[-1]:
                     highest_acc[-1] = acc_list[-1]
-                    if lfw_score>=0.99:
+                    if lfw_score>=0.90:
                         do_save = True
                 if len(highest_acc)> 2 and acc_list[1] >= highest_acc[1]:
                     highest_acc[1] = acc_list[1]
-                    if lfw_score >= 0.99:
+                    if lfw_score >= 0.90:
                         do_save = True
             if args.ckpt==0:
                 do_save = False

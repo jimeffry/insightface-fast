@@ -106,6 +106,10 @@ def generate_list_from_dir(dirpath,out_file,base_id,prison_data,face_align,save_
             "real_id + base_id"
     '''
     f_w = open(out_file,'w')
+    f_s = out_file.split('/')
+    pro_path = '/'.join(f_s[:-1])
+    pro_path = os.path.join(pro_path,'property')
+    f2_w = open(pro_path,'w')
     files = os.listdir(dirpath)
     total_ = len(files)
     idx =0
@@ -121,28 +125,31 @@ def generate_list_from_dir(dirpath,out_file,base_id,prison_data,face_align,save_
         sys.stdout.write("\r>>convert  %d/%d" %(idx,total_))
         sys.stdout.flush()
         if base_id is None:
-            label = int(file_cnt.strip())
+            #label = int(file_cnt.strip())
+            label = int(label)
         else:
             label = label+base_id
         if Save_Label:
-            id_num = file_cnt[2:]
+            id_num = file_cnt
             label_dict[id_num] = label
-        if prison_data==1 and len(imgs)>200 :
-            keep_idx = npr.choice(len(imgs), size=200, replace=False)
+        if prison_data==1 and len(imgs)>50 :
+            keep_idx = npr.choice(len(imgs), size=50, replace=False)
             imgs = [imgs[i] for i in keep_idx]
         for img_one in imgs:
-            if prison_data==1 and len(img_one)<=8:
-                continue
+            #if prison_data==1 and len(img_one)<=8:
+             #   continue
             img_path = os.path.join(img_dir,img_one)
             total_cnt+=1
             f_w.write("{} {} {}\n".format(face_align,img_path,label))
     print("total id ",len(files))
     print("total img ",total_cnt)
+    f2_w.write('{},{},{}'.format(len(files),112,112))
     if Save_Label:
         f_label = open(out_file[:-4]+".pkl",'wb')
         pickle.dump(label_dict,f_label)
         f_label.close()
     f_w.close()
+    f2_w.close()
 
 def plt_histgram(file_in,file_out,distance,num_bins=20):
     '''
@@ -162,7 +169,7 @@ def plt_histgram(file_in,file_out,distance,num_bins=20):
     for line in input_file.readlines():
         line = line.strip()
         line_splits = line.split(' ')
-        key_name=string.atoi(line_splits[-1])
+        key_name=int(line_splits[-1])
         cur_cnt = id_dict_cnt.setdefault(key_name,0)
         id_dict_cnt[key_name] = cur_cnt +1
     for key_num in id_dict_cnt.keys():
@@ -181,6 +188,8 @@ def plt_histgram(file_in,file_out,distance,num_bins=20):
         out_file.write(str(datas[i])+'\t'+str(bins[i])+'\n')
     input_file.close()
     out_file.close()
+    
+
 
 if __name__ == '__main__':
     args = get_args()

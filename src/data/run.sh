@@ -9,6 +9,9 @@
 #python face2rec2.py  --prefix /home/lxy/Downloads/DataSet/Face_reg/prison_ms/
 #python face2rec2.py  --prefix /home/lxy/Downloads/DataSet/Ms-Celeb-1m/prison_train/
 ## plot histgram dataset distribute
-python glint2lst.py --file1-in ./output/ms_prison_v2.lst --out-file ./output/dataset_dis2.txt --hist-bins 50 --cmd-type hist
+#python glint2lst.py --file1-in ./output/ms_prison_v2.lst --out-file ./output/dataset_dis2.txt --hist-bins 50 --cmd-type hist
 ## merge 2 datasets
-#python dataset_merge.py --include /home/lxy/Downloads/DataSet/Ms-Celeb-1m/prison_train/,/home/lxy/Downloads/DataSet/Ms-Celeb-1m/faces_ms1m_112x112 --output /home/lxy/Downloads/DataSet/Ms-Celeb-1m/prison_ms/ --param1 0.0
+#python dataset_merge.py --include /home/lxy/Downloads/DataSet/Ms-Celeb-1m/prison_train/,/home/lxy/Downloads/DataSet/Ms-Celeb-1m/faces_ms1m_112x112 \
+#        --output /home/lxy/Downloads/DataSet/Ms-Celeb-1m/prison_ms/ --param1 0.0
+
+#python unpack_mxrecord.py 

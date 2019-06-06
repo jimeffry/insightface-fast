@@ -40,7 +40,7 @@ class FaceImageIter(io.DataIter):
             self.imgrec = recordio.MXIndexedRecordIO(path_imgidx, path_imgrec, 'r')  # pylint: disable=redefined-variable-type
             s = self.imgrec.read_idx(0)
             header, _ = recordio.unpack(s)
-            if header.flag==2:
+            if header.flag>0:
               print('header0 label', header.label)
               self.header0 = (int(header.label[0]), int(header.label[1]))
               #assert(header.flag==1)
@@ -56,7 +56,7 @@ class FaceImageIter(io.DataIter):
                 count = b-a
               print('id2range', len(self.id2range))
             else:
-              print("header flag ",header.flag)
+              print("header flag may be wrong ",header.flag)
               self.imgidx = list(self.imgrec.keys)
             if shuffle:
               self.seq = self.imgidx
@@ -192,7 +192,7 @@ class FaceImageIter(io.DataIter):
             while i < batch_size:
                 label, s, bbox, landmark = self.next_sample()
                 _data = self.imdecode(s)
-                print("sample img shape ",np.shape(_data))
+                #print("sample img shape ",np.shape(_data))
                 _data = self.resize_img(_data)
                 if self.rand_mirror:
                   _rd = random.randint(0,1)

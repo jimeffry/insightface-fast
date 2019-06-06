@@ -155,28 +155,11 @@ def parse_args():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
         description='Create an image list or \
         make a record database by reading from an image list')
-    parser.add_argument('--prefix', help='prefix of input/output lst and rec files.')
+    parser.add_argument('--lst-dir',dest='lst_dir', help='prefix of input/output lst and rec files.')
+    parser.add_argument('--save-dir',dest='save_dir', help='output rec files.')
+    parser.add_argument('--img-dir',dest='img_dir', help='images locate dir')
     #parser.add_argument('root', help='path to folder containing images.')
-
     cgroup = parser.add_argument_group('Options for creating image lists')
-    cgroup.add_argument('--list', type=bool, default=False,
-                        help='If this is set im2rec will create image list(s) by traversing root folder\
-        and output to <prefix>.lst.\
-        Otherwise im2rec will read <prefix>.lst and create a database at <prefix>.rec')
-    cgroup.add_argument('--exts', nargs='+', default=['.jpeg', '.jpg'],
-                        help='list of acceptable image extensions.')
-    cgroup.add_argument('--chunks', type=int, default=1, help='number of chunks.')
-    cgroup.add_argument('--train-ratio', type=float, default=1.0,
-                        help='Ratio of images to use for training.')
-    cgroup.add_argument('--test-ratio', type=float, default=0,
-                        help='Ratio of images to use for testing.')
-    cgroup.add_argument('--recursive', type=bool, default=False,
-                        help='If true recursively walk through subdirs and assign an unique label\
-        to images in each folder. Otherwise only include images in the root folder\
-        and give them label 0.')
-    cgroup.add_argument('--shuffle', type=bool, default=True, help='If this is set as True, \
-        im2rec will randomize the image order in <prefix>.lst')
-
     rgroup = parser.add_argument_group('Options for creating database')
     rgroup.add_argument('--quality', type=int, default=95,
                         help='JPEG quality for encoding, 1-100; or PNG compression for encoding, 1-9')
@@ -194,32 +177,27 @@ def parse_args():
     rgroup.add_argument('--pack-label', type=bool, default=False,
         help='Whether to also pack multi dimensional label in the record file')
     args = parser.parse_args()
-    args.prefix = os.path.abspath(args.prefix)
     #args.root = os.path.abspath(args.root)
     return args
 
 if __name__ == '__main__':
     args = parse_args()
-    if args.list:
+    if not os.path.isdir(args.lst_dir):
+        print("please list is false")
         pass
-        #make_list(args)
     else:
-        if os.path.isdir(args.prefix):
-            working_dir = args.prefix
-        else:
-            working_dir = os.path.dirname(args.prefix)
-        prop = face_image.load_property(working_dir)
+        prop = face_image.load_property(args.lst_dir)
         image_size = prop.image_size
         print('image_size', image_size)
         args.image_h = image_size[0]
         args.image_w = image_size[1]
-        files = [os.path.join(working_dir, fname) for fname in os.listdir(working_dir)
-                    if os.path.isfile(os.path.join(working_dir, fname))]
+        files = [os.path.join(args.lst_dir, fname) for fname in os.listdir(args.lst_dir)
+                    if os.path.isfile(os.path.join(args.lst_dir, fname))]
         count = 0
         print("work dir: ",files)
         for fname in files:
-            if fname.startswith(args.prefix) and fname.endswith('.lst'):
-                print('Creating .rec file from', fname, 'in', working_dir)
+            if fname.endswith('.lst'):
+                print('Creating .rec file from', fname, 'in', args.lst_dir)
                 count += 1
                 image_list = read_list(fname)
                 # -- write_record -- #
@@ -230,7 +208,7 @@ if __name__ == '__main__':
                                     for i in range(args.num_thread)]
                     for p in read_process:
                         p.start()
-                    write_process = multiprocessing.Process(target=write_worker, args=(q_out, fname, working_dir))
+                    write_process = multiprocessing.Process(target=write_worker, args=(q_out, fname, args.save_dir))
                     write_process.start()
 
                     for i, item in enumerate(image_list):
@@ -252,8 +230,8 @@ if __name__ == '__main__':
                     fname = os.path.basename(fname)
                     fname_rec = os.path.splitext(fname)[0] + '.rec'
                     fname_idx = os.path.splitext(fname)[0] + '.idx'
-                    record = mx.recordio.MXIndexedRecordIO(os.path.join(working_dir, fname_idx),
-                                                           os.path.join(working_dir, fname_rec), 'w')
+                    record = mx.recordio.MXIndexedRecordIO(os.path.join(args.save_dir, fname_idx),
+                                                           os.path.join(args.save_dir, fname_rec), 'w')
                     cnt = 0
                     pre_time = time.time()
                     for i, item in enumerate(image_list):
@@ -274,5 +252,5 @@ if __name__ == '__main__':
                     print("over ",cnt)
                     print("ids ",label_cnt)
         if not count:
-            print('Did not find and list file with prefix %s'%args.prefix)
+            print('Did not find and list file with prefix %s'%args.lst_dir)
 
